@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TTN Map Points Viewer</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.4.1/socket.io.min.js"></script> <!-- Include Socket.IO -->
+    <style>
+        /* Dark Mode and Glass Style */
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #1e1e1e;
+            color: #e0e0e0;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 {
+            font-size: 2rem;
+            color: #ffffff;
+            margin-bottom: 10px;
+        }
+
+        #map {
+            height: 400px;
+            width: 100%;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-top: 20px;
+            border: 1px solid #333;
+        }
+
+        #controls, #points {
+            margin: 20px auto;
+            max-width: 600px;
+            text-align: left;
+        }
+
+        #controls select, #controls button, #sendLocationButton {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 10px;
+            border-radius: 10px;
+            margin: 5px;
+            color: #e0e0e0;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        #controls select:hover, #controls button:hover, #sendLocationButton:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+
+        #points li {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 10px;
+            border-radius: 10px;
+            margin: 5px 0;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        #points li:hover {
+            background-color: rgba(255, 255, 255, 0.15);
+        }
+    </style>
+</head>
+<body>
+    <h1>TTN Map Viewer</h1>
+
+    <!-- Send Location Button -->
+    <button id="sendLocationButton" onclick="sendCurrentLocation()">Send Current Location</button>
+
+    <!-- Map and Controls -->
+    <div id="map"></div>
+
+    <!-- Controls for sorting, clearing map, and setting time range -->
+    <div id="controls">
+        <label for="sortBy">Sort by:</label>
+        <select id="sortBy" onchange="fetchPoints()">
+            <option value="last24hours">Last 24 Hours</option>
+            <option value="time">Time (Start to End)</option>
+        </select>
+        
+        <button onclick="clearMap()">Clear Map</button>
+    </div>
+
+    <!-- List of Points -->
+    <ul id="points"></ul>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script>
+        let map = L.map('map').setView([0, 0], 2);  // Set to world view initially
+        let markers = [];
+        let polyline = null;
+
+        // Add OpenStreetMap tiles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 18,
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        async function fetchPoints() {
+            const sortBy = document.getElementById("sortBy").value;
+            let query = `/api/points/history`;
+
+            if (sortBy === "last24hours") {
+                query += "?last24hours=true";
+            } else if (sortBy === "time") {
+                query += "?sort_by=time&order=asc";
+            }
+            
+            const response = await fetch(query);
+            const points = await response.json();
+            displayPoints(points);
+        }
+
+        function displayPoints(points) {
+            clearMap();
+            const pointsList = document.getElementById('points');
+            pointsList.innerHTML = '';
+
+            // Display each point in the list and add to the map
+            let lastLatLng = null;
+            const latLngs = [];
+            points.forEach((point, index) => {
+                const listItem = document.createElement('li');
+                
+                // Format time with day name and readable format
+                const formattedTime = new Date(point.time).toLocaleString('en-US', {
+                    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', 
+                    hour: 'numeric', minute: 'numeric', second: 'numeric'
+                });
+                
+                listItem.innerText = `Time: ${formattedTime}, Location: (${point.latitude}, ${point.longitude})`;
+                listItem.onclick = () => showPointOnMap(point);
+                pointsList.appendChild(listItem);
+
+                // Add marker and arrow if there are multiple points
+                const latLng = [point.latitude, point.longitude];
+                const marker = L.marker(latLng).addTo(map);
+                marker.bindPopup(`Time: ${formattedTime}<br>Location: (${point.latitude}, ${point.longitude})`);
+                markers.push(marker);
+                latLngs.push(latLng);
+
+                // Draw line between points
+                if (lastLatLng) {
+                    L.polyline([lastLatLng, latLng], { color: 'lime', weight: 2, opacity: 0.7 }).addTo(map);
+                }
+                lastLatLng = latLng;
+            });
+
+            // Fit map to show all markers
+            if (latLngs.length) {
+                map.fitBounds(latLngs);
+            }
+        }
+
+        function showPointOnMap(point) {
+            const latLng = [point.latitude, point.longitude];
+            map.setView(latLng, 10);
+            L.marker(latLng)
+                .addTo(map)
+                .bindPopup(`Time: ${new Date(point.time).toLocaleString('en-US', {
+                    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', 
+                    hour: 'numeric', minute: 'numeric', second: 'numeric'
+                })}, Location: (${point.latitude}, ${point.longitude})`)
+                .openPopup();
+        }
+
+        function clearMap() {
+            // Remove all markers and polyline from the map
+            markers.forEach(marker => map.removeLayer(marker));
+            markers = [];
+            if (polyline) {
+                map.removeLayer(polyline);
+                polyline = null;
+            }
+            document.getElementById('points').innerHTML = '';  // Clear list of points
+        }
+
+        // Socket.IO connection to Flask server
+        const socket = io("http://127.0.0.1:5000");  // Replace with your Flask server IP
+
+        // Listen for new points from server
+        socket.on("new_point", point => {
+            fetchPoints();  // Update list of points and map
+        });
+
+        async function sendCurrentLocation() {
+            if (!navigator.geolocation) {
+                alert("Geolocation is not supported by this browser.");
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(position => {
+                const location = {
+                    lat: position.coords.latitude,
+                    lng: position.coords.longitude
+                };
+                socket.emit("send_location", { location });
+                alert("Current location sent via WebSocket!");
+            });
+        }
+
+        // Initial fetch of points
+        fetchPoints();
+    </script>
+</body>
+</html>
