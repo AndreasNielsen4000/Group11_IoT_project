@@ -42,7 +42,7 @@
         }
 
         /* Enlarged button styling */
-        #sendLocationButton {
+        .styled-button {
             background: rgba(255, 255, 255, 0.1);
             border: 1px solid rgba(255, 255, 255, 0.3);
             padding: 15px 20px;
@@ -56,7 +56,7 @@
             margin: 20px auto;
             text-align: center;
         }
-        #sendLocationButton:hover {
+        .styled-button:hover {
             background-color: rgba(255, 255, 255, 0.2);
         }
 
@@ -154,17 +154,18 @@
     <div id="container">
         <div id="mapContainer">
             <div id="map"></div>
-            <button id="sendLocationButton" onclick="sendCurrentLocation()">Send Current Location</button>
+            <button id="sendLocationButton" class="styled-button" onclick="sendCurrentLocation()">Send Current Location</button>
+            <button id="goToCurrentLocationButton" class="styled-button" onclick="goToCurrentLocation()">Go to Current Location</button>
         </div>
 
         <div id="controlsContainer">
             <div id="controls">
                 <label for="sortBy">Sort by:</label>
                 <select id="sortBy" onchange="fetchPoints()">
-                    <option value="last24hours">Last 24 Hours</option>
                     <option value="time_asc">Time (Earliest to Latest)</option>
                     <option value="time_desc">Time (Latest to Earliest)</option>
                 </select>
+                <button onclick="setLast24Hours()">Last 24 Hours</button>
                 <button onclick="toggleLines()">Toggle Lines</button>
                 <label for="startDate">Start Date & Time:</label>
                 <input type="datetime-local" id="startDate">
@@ -173,6 +174,7 @@
                 <button onclick="fetchPoints()">Filter Points</button>
                 <button onclick="clearMap()">Clear Map</button>
                 <button onclick="showAllPoints()">Show All</button>
+                <button onclick="exportToCSV()">Export to CSV</button>
             </div>
             <div id="pointsContainer">
                 <ul id="points"></ul>
@@ -188,13 +190,19 @@
         let linesEnabled = false;
         let legendLayer;
         let socket;
+        let existingPoints = new Set();
+        let lastClearedTime = null;
 
         // Initialize WebSocket
         fetch('/ws_url')
             .then(response => response.json())
             .then(data => {
                 socket = io(data.ws_url);
-                socket.on("new_point", point => fetchPoints());  // Update on new data
+                socket.on("new_point", point => {
+                    addPointToMap(point);
+                    addPointToList(point);
+                    showPointOnMap(point.latitude, point.longitude);
+                });
             })
             .catch(error => console.error("Error fetching WebSocket URL:", error));
 
@@ -216,24 +224,38 @@
 
             const response = await fetch(query);
             const points = await response.json();
-            points.sort((a, b) => new Date(a.time) - new Date(b.time));
             displayPoints(points);
+        }
+
+        function setLast24Hours() {
+            const now = new Date();
+            const startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);  // 24 hours ago
+            document.getElementById("startDate").value = startDate.toISOString().slice(0, 16);
+            document.getElementById("endDate").value = now.toISOString().slice(0, 16);
+            fetchPoints();
         }
 
         async function showAllPoints() {
+            document.getElementById("sortBy").value = "time_asc";
+            document.getElementById("startDate").value = "";
+            document.getElementById("endDate").value = "";
+
             const response = await fetch('/api/points/all');
             const points = await response.json();
-            points.sort((a, b) => new Date(a.time) - new Date(b.time));
             displayPoints(points);
         }
 
-        async function displayPoints(points) {
+        function displayPoints(points) {
             clearMap();
             const pointsList = document.getElementById('points');
             pointsList.innerHTML = '';
 
             const latLngs = [];
             for (const point of points) {
+                if (lastClearedTime && new Date(point.time) <= lastClearedTime) {
+                    continue;  // Skip points that were already cleared
+                }
+
                 const listItem = document.createElement('li');
                 const utcDate = new Date(point.time + "Z");
                 const formattedTime = utcDate.toLocaleString('en-US', {
@@ -261,6 +283,93 @@
 
             if (latLngs.length) map.fitBounds(latLngs);
             if (linesEnabled) drawGradientLines();
+        }
+
+        async function showAllPoints() {
+            const response = await fetch('/api/points/all');
+            const points = await response.json();
+            points.sort((a, b) => new Date(a.time) - new Date(b.time));
+            displayPoints(points);
+        }
+
+        function displayPoints(points) {
+            clearMap();  // Clear existing markers and list items
+            const pointsList = document.getElementById('points');
+
+            for (const point of points) {
+                const pointKey = `${point.latitude},${point.longitude}`;
+                if (!existingPoints.has(pointKey)) {
+                    addPointToMap(point);
+                    addPointToList(point);
+                    existingPoints.add(pointKey);
+                }
+            }
+
+            if (linesEnabled) drawGradientLines();
+        }
+
+        function addPointToMap(point) {
+            const latLng = [point.latitude, point.longitude];
+            const marker = L.marker(latLng).addTo(map);
+            const utcDate = new Date(point.time + "Z");
+            const formattedTime = utcDate.toLocaleString('en-US', {
+                weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', 
+                hour: 'numeric', minute: 'numeric', second: 'numeric', timeZoneName: 'short'
+            });
+            const address = point.address || `${point.latitude.toFixed(4)}, ${point.longitude.toFixed(4)}`;
+            marker.bindPopup(`Time: ${formattedTime}<br>Location: (${point.latitude.toFixed(4)}, ${point.longitude.toFixed(4)})<br>Address: ${address}`);
+            marker.on('click', () => highlightPointInList(point.id));
+            markers.push(marker);
+        }
+
+        function addPointToList(point) {
+            const pointsList = document.getElementById('points');
+            const listItem = document.createElement('li');
+            listItem.id = `point-${point.id}`;
+            const utcDate = new Date(point.time + "Z");
+            const formattedTime = utcDate.toLocaleString('en-US', {
+                weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', 
+                hour: 'numeric', minute: 'numeric', second: 'numeric', timeZoneName: 'short'
+            });
+            const address = point.address || `${point.latitude.toFixed(4)}, ${point.longitude.toFixed(4)}`;
+
+            listItem.innerHTML = `
+                <div class="point-info">
+                    <span><strong>Time:</strong> ${formattedTime}</span>
+                    <span><strong>Location:</strong> (${point.latitude.toFixed(4)}, ${point.longitude.toFixed(4)})</span>
+                    <span><strong>Address:</strong> ${address}</span>
+                </div>
+                <button onclick="showPointOnMap(${point.latitude}, ${point.longitude})">View</button>
+                <button onclick="confirmDeletePoint(${point.id})">Delete</button>
+            `;
+            pointsList.appendChild(listItem);
+        }
+
+        function highlightPointInList(id) {
+            const listItem = document.getElementById(`point-${id}`);
+            if (listItem) {
+                listItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                listItem.style.backgroundColor = 'rgba(255, 255, 0, 0.3)';
+                setTimeout(() => {
+                    listItem.style.backgroundColor = '';
+                }, 2000);
+            }
+        }
+
+        function confirmDeletePoint(id) {
+            if (confirm("Are you sure you want to delete this point?")) {
+                deletePoint(id);
+            }
+        }
+
+        async function deletePoint(id) {
+            const response = await fetch(`/api/points/${id}`, { method: 'DELETE' });
+            if (response.ok) {
+                alert("Point deleted successfully.");
+                fetchPoints();
+            } else {
+                alert("Failed to delete point.");
+            }
         }
 
         function toggleLines() {
@@ -336,6 +445,8 @@
             clearLines();
             removeLegend();
             document.getElementById('points').innerHTML = ''; 
+            existingPoints.clear();
+            lastClearedTime = new Date();  // Record the time when the map was cleared
         }
 
         async function sendCurrentLocation() {
@@ -353,6 +464,76 @@
                 alert("Current location sent via WebSocket!");
             });
         }
+
+        function goToCurrentLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    var lat = position.coords.latitude;
+                    var lng = position.coords.longitude;
+                    map.setView([lat, lng], 18);  // Adjust the zoom level to 18 for a closer view
+                });
+            } else {
+                alert("Geolocation is not supported by this browser.");
+            }
+        }
+
+        function showPointOnMap(lat, lng) {
+            console.log(`showPointOnMap called with lat: ${lat}, lng: ${lng}`);
+            map.setView([lat, lng], 18);  // Adjust the zoom level to 18 for a closer view
+            markers.forEach(marker => {
+                if (marker.getLatLng().lat === lat && marker.getLatLng().lng === lng) {
+                    marker.openPopup();
+                }
+            });
+        }
+
+        function exportToCSV() {
+            const pointsList = document.getElementById('points').children;
+            if (pointsList.length === 0) {
+                alert("No points to export.");
+                return;
+            }
+
+            let csvContent = "data:text/csv;charset=utf-8,\uFEFF";  // Add BOM for UTF-8 encoding
+            csvContent += "Date,Time,Latitude,Longitude,House Number,Street,City,Zipcode,Country\n"; // CSV header
+
+            for (const listItem of pointsList) {
+                const dateTime = listItem.querySelector('.point-info span:nth-child(1)').innerText.split(': ')[1];
+                const location = listItem.querySelector('.point-info span:nth-child(2)').innerText.split(': ')[1];
+                const address = listItem.querySelector('.point-info span:nth-child(3)').innerText.split(': ')[1];
+                const [latitude, longitude] = location.replace(/[()]/g, '').split(', ');
+
+                // Split date and time
+                const [date, time] = dateTime.split(' at ');
+
+                // Remove day name from date and handle invalid dates
+                let dateWithoutDay = date.split(', ').slice(1).join(' ');
+                if (!dateWithoutDay) {
+                    dateWithoutDay = "Invalid Date";
+                }
+
+                // Split address components
+                const addressParts = address.split(', ');
+                const houseNumber = addressParts[0];
+                const street = addressParts[1];
+                const city = addressParts[2];
+                const zipcode = addressParts[addressParts.length - 2];
+                const country = addressParts[addressParts.length - 1];
+
+                csvContent += `${dateWithoutDay},${time},${latitude},${longitude},${houseNumber},${street},${city},${zipcode},${country}\n`;
+            }
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "points.csv");
+            document.body.appendChild(link); // Required for FF
+
+            link.click();
+        }
+
+        // Poll for new points every 5 seconds
+        setInterval(fetchPoints, 5000);
 
         fetchPoints();
     </script>
