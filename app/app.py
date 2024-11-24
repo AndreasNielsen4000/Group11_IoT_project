@@ -15,9 +15,10 @@ from queue import Queue
 import time
 
 
-app = Flask(__name__, static_folder="static")
+app = Flask(__name__, static_folder="static", template_folder="templates")
 socketio = SocketIO(app, cors_allowed_origins="*")
 
+DEBUG_MODE = True  # Set to True to disable ngrok for debugging
 
 # Attempt to start ngrok and set the WebSocket URL
 def get_local_ip():
@@ -25,22 +26,26 @@ def get_local_ip():
     hostname = socket.gethostname()
     return socket.gethostbyname(hostname)
 
-try:
-    public_url = ngrok.connect(5000, "http").public_url
-    print(" * ngrok tunnel available at:", public_url)
-    websocket_url = public_url
-except exception.PyngrokNgrokError:
-    print(" * ngrok failed to start, using localhost IP")
+if not DEBUG_MODE:
+    try:
+        public_url = ngrok.connect(5000, "http").public_url
+        print(" * ngrok tunnel available at:", public_url)
+        websocket_url = public_url
+    except exception.PyngrokNgrokError:
+        print(" * ngrok failed to start, using localhost IP")
+        websocket_url = f"http://{get_local_ip()}:5000"
+else:
     websocket_url = f"http://{get_local_ip()}:5000"
+    print(" * Debug mode enabled, using localhost IP:", websocket_url)
 
 @app.route('/')
 def index():
     # Check if the request was made to localhost or the local IP; if so, redirect to the Ngrok URL
-    if "ngrok" in websocket_url and (request.host.startswith("localhost") or request.host.startswith("127.") or request.host.startswith("192.168")):
+    if not DEBUG_MODE and "ngrok" in websocket_url and (request.host.startswith("localhost") or request.host.startswith("127.") or request.host.startswith("192.168")):
         return redirect(websocket_url, code=302)
     else:
-        # If already on the Ngrok URL or no Ngrok URL, serve index.html directly
-        return app.send_static_file('index.html')
+        # If already on the Ngrok URL or no Ngrok URL, serve index.html directly from the static folder
+        return send_from_directory(app.static_folder, 'index.html')
 
 @app.route('/ws_url')
 def ws_url():
@@ -236,21 +241,14 @@ def save_point_to_db(point):
         conn = sqlite3.connect('data.db')
         c = conn.cursor()
 
-        # Check if the point already exists
-        c.execute('SELECT id, address FROM points WHERE latitude = ? AND longitude = ?', 
-                  (point['location']['lat'], point['location']['lng']))
-        row = c.fetchone()
-
-        if row:
-            if not row[1]:  # If address is missing, add to the queue for address lookup
-                address_queue.put((row[0], point['location']['lat'], point['location']['lng']))
-        else:
-            # If point does not exist, insert with a placeholder address
-            c.execute('INSERT INTO points (time, latitude, longitude, address) VALUES (?, ?, ?, ?)', 
-                      (point['time'], point['location']['lat'], point['location']['lng'], "Fetching address..."))
-            point_id = c.lastrowid
-            # Add to address queue for lookup
-            address_queue.put((point_id, point['location']['lat'], point['location']['lng']))
+        # Insert the point with a placeholder address
+        c.execute('INSERT INTO points (time, latitude, longitude, address) VALUES (?, ?, ?, ?)', 
+                  (point['time'], point['location']['lat'], point['location']['lng'], "Fetching address..."))
+        point_id = c.lastrowid
+        # Add to address queue for lookup
+        address_queue.put((point_id, point['location']['lat'], point['location']['lng']))
+        # Emit new point to WebSocket clients
+        socketio.emit("new_point", point)
         
         conn.commit()
         conn.close()
@@ -301,8 +299,14 @@ def on_message(client, userdata, msg):
         logger.debug(f"Message payload: {payload}")
 
         # Extract time and location from the payload
-        device_time = payload.get("received_at", datetime.utcnow().isoformat())
+        device_time_str = payload.get("uplink_message", {}).get("decoded_payload", {}).get("time", {})
         location_data = payload.get("uplink_message", {}).get("decoded_payload", {}).get("location", {})
+
+        # Convert the timestring to ISO format
+        if device_time_str:
+            device_time = datetime.strptime(device_time_str, "%Y%m%dT%H%M%S").isoformat()
+        else:
+            device_time = datetime.utcnow().isoformat()
 
         # Check if location data exists in the payload
         if "lat" in location_data and "lng" in location_data:
@@ -332,8 +336,7 @@ def on_message(client, userdata, msg):
 
 @app.route('/api/points/history', methods=['GET'])
 def get_history():
-    sort_by = request.args.get('sort_by', 'time')  # Default to sorting by time
-    order = request.args.get('order', 'asc')       # Default to ascending order
+    sort_by = request.args.get('sort_by', 'time_asc')  # Default to sorting by time ascending
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
 
@@ -355,8 +358,14 @@ def get_history():
         params.append(end_date)
 
     # Allow sorting by 'time', 'latitude', or 'longitude'
-    if sort_by in ('time', 'latitude', 'longitude') and order in ('asc', 'desc'):
-        query += f' ORDER BY {sort_by} {order.upper()}'
+    if sort_by == 'time_asc':
+        query += ' ORDER BY time ASC'
+    elif sort_by == 'time_desc':
+        query += ' ORDER BY time DESC'
+    elif sort_by == 'latitude':
+        query += ' ORDER BY latitude ASC'
+    elif sort_by == 'longitude':
+        query += ' ORDER BY longitude ASC'
     else:
         query += ' ORDER BY time ASC'
 
@@ -368,6 +377,15 @@ def get_history():
     points_history = [{'id': row[0], 'time': row[1], 'latitude': row[2], 'longitude': row[3], 'address': row[4]} for row in rows]
     return jsonify(points_history)
 
+
+@app.route('/api/points/<int:id>', methods=['DELETE'])
+def delete_point(id):
+    conn = sqlite3.connect('data.db')
+    c = conn.cursor()
+    c.execute('DELETE FROM points WHERE id = ?', (id,))
+    conn.commit()
+    conn.close()
+    return '', 204
 
 
 # Set MQTT client callbacks
