@@ -12,18 +12,18 @@ unsigned int debounceDelay;
 volatile bool flag = false;
 bool notHold = true;
 
-struct MCU_Communication {
+struct loraPayload_t {
     float longitude;
     float latitude;
     char time[10]; // Use a fixed-size char array instead of String for simplicity
 };
 
-MCU_Communication mcu_communication;
+loraPayload_t mcu_communication;
 
-byte payload[sizeof(MCU_Communication)]; // 4 bytes for longitude, 4 bytes for latitude, 5 bytes for time string
+byte payload[sizeof(loraPayload_t)]; // 4 bytes for longitude, 4 bytes for latitude, 5 bytes for time string
 
 
-void getMCU_Communication(MCU_Communication *mcu_communication)
+void getMCU_Communication(loraPayload_t *mcu_communication)
 {
     mcu_communication->longitude = 37.7749;
     mcu_communication->latitude = -122.4194;
