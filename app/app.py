@@ -143,15 +143,13 @@ def get_all_points():
 
 @socketio.on("send_location")
 def handle_send_location(data):
+    logger.info(f"Received location data: {data}")  # Debug log
     data["time"] = datetime.utcnow().isoformat()  # Add server time
     data["port"] = 1
     save_point_to_db(data)
     # Convert data to JSON, then encode it as Base64
     json_data = json.dumps(data)
-    print(json_data)
     encoded_data = base64.b64encode(json_data.encode()).decode()  # Base64 encoding
-
-    # encoded_data = base64.b64encode("test".encode()).decode()  # Base64 encoding
 
     publish_data = {
         "downlinks": [
@@ -163,11 +161,7 @@ def handle_send_location(data):
         ]
     }
 
-    # print(encoded_data)
-    # print(base64.b64decode(encoded_data).decode())
-    # print(json.dumps(publish_data['downlinks'][0]['frm_payload']))
-    # print(base64.b64decode(json.dumps(publish_data['downlinks'][0]['frm_payload'])).decode())  
-
+    logger.info(f"Publishing data to MQTT: {publish_data}")  # Debug log
     publish.single(
         USER_LOCATION_TOPIC,
         json.dumps(publish_data),

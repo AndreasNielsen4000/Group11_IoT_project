@@ -235,7 +235,6 @@ void displayControl() {
     }
   }
   if (displayErrorFlag) {
-    displayMessageErrorWarning("Invalid data");
     if (currentMillis - previousMillisErrorMessage >= intervalErrorMessage) {
       previousMillisErrorMessage = currentMillis;
       displayClearMessage();
@@ -272,6 +271,7 @@ float getBatteryVoltage() {
 // Function to get GPS data and update the txData structure
 // This function retrieves GPS data, formats it, and updates the txData structure with the location, date, and time.
 void getGPSData() {
+  
   gpsSerial.listen(); // Make GPS serial active
   sendUBX(GPSon, sizeof(GPSon)/sizeof(uint8_t));
   delay(500);
@@ -288,7 +288,7 @@ void getGPSData() {
   Serial.println(F("Proc. GPS"));
   #endif
   displayStatusMessage("Getting location");
-  while (millis() - start < 180000) { // Wait up to 180 seconds for valid GPS data
+  while (millis() - start < 30000) { // Wait up to 180 seconds for valid GPS data
     while (gpsSerial.available()) {
       char c = gpsSerial.read();
       Serial.write(c); // Print GPS data to serial monitor for debugging
@@ -327,12 +327,18 @@ void getGPSData() {
     #ifdef DEBUG
     Serial.println("** No valid data received from GPS: check wiring **");
     #endif
-    displayStatusMessage("GPS Error");
+    displayMessageErrorWarning("GPS");
+    previousMillisErrorMessage = millis();
     displayErrorFlag = true;
     displayDataFlag = false;
     buzzerStates = BUZZER_ERROR;
-  } else {
+  } else if (validLocation) {
     displayStatusMessage("Location valid");
+  } else {
+    validLocation = false;
+    displayMessageErrorWarning("GPS");
+    previousMillisErrorMessage = millis();
+    buzzerStates = BUZZER_ERROR;
   }
   sendUBX(GPSon, sizeof(GPSon)/sizeof(uint8_t));
   delay(500);
@@ -436,6 +442,7 @@ void checkLoraConnection() {
   // From https://github.com/jpmeijers/RN2483-Arduino-Library/blob/master/examples/ArduinoUnoNano-downlink/ArduinoUnoNano-downlink.ino
   loraSerial.listen(); // Ensure LoRa serial is active
   displayStatusMessage("Checking LoRa");
+  previousMillisTransmittedMessage = millis();
   switch(myLora.txCnf("!")) //one byte, blocking function
     {
         case TX_FAIL:
@@ -485,7 +492,7 @@ void initializeRadio() {
   //reset rn2483
   pinMode(LORA_RESET, OUTPUT);
   digitalWrite(LORA_RESET, LOW);
-  delay(500);
+  delay(10000);
   digitalWrite(LORA_RESET, HIGH);
 
   delay(100); //wait for the RN2xx3's startup message
@@ -494,16 +501,31 @@ void initializeRadio() {
   //Autobaud the rn2483 module to 9600. The default would otherwise be 57600.
   myLora.autobaud();
 
+  String hweui = myLora.hweui();
+  if (hweui.length() != 16) {
+    #ifdef DEBUG
+    Serial.println(F("Power Cycle LoRa"));
+    Serial.println(hweui);
+    #endif
+    delay(10000);
+  }
+
   //configure your keys and join the network
   #ifdef DEBUG
   Serial.println(F("Joining TTN"));
   #endif
   bool join_result = false;
 
-  const char *appEui = "0000000000000000";
-  const char *appKey = "511744DB68B8E1D4BCF88EA2E8F10887";
+  // const char *appEui = "0000000000000000";
+  // const char *appKey = "511744DB68B8E1D4BCF88EA2E8F10887";
 
-  join_result = myLora.initOTAA(appEui, appKey);
+  // join_result = myLora.initOTAA(appEui, appKey);
+
+  const char *devAddr = "260BE74E";
+  const char *nwkSKey = "74069E50C94868E50E0CE00DEC853D34";
+  const char *appSKey = "9B4493F883D82D685F536B636451770F";
+
+  join_result = myLora.initABP(devAddr, appSKey, nwkSKey);
 
   unsigned long startAttemptTime = millis();
   while(!join_result && millis() - startAttemptTime < 185000) // Try for 3 minutes
@@ -513,7 +535,7 @@ void initializeRadio() {
     #endif
     // myLora.setDR(0); //setting data-rate
     join_result = myLora.init();
-    delay(5000); //delay 5 seconds before retry
+    delay(20000); //delay 5 seconds before retry
   }
 
   if (join_result) {
