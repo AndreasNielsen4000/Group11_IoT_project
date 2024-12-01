@@ -514,7 +514,7 @@ TX_RETURN_TYPE rn2xx3::txCommand(const String& command, const String& data, bool
       }
     }
   }
-
+  
   return TX_FAIL; //should never reach this
 }
 

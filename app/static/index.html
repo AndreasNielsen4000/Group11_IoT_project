@@ -197,11 +197,18 @@
         fetch('/ws_url')
             .then(response => response.json())
             .then(data => {
+                console.log("WebSocket URL:", data.ws_url);  // Debug log
                 socket = io(data.ws_url);
+                socket.on("connect", () => {
+                    console.log("WebSocket connected");  // Debug log
+                });
                 socket.on("new_point", point => {
                     addPointToMap(point);
                     addPointToList(point);
                     showPointOnMap(point.latitude, point.longitude);
+                });
+                socket.on("disconnect", () => {
+                    console.log("WebSocket disconnected");  // Debug log
                 });
             })
             .catch(error => console.error("Error fetching WebSocket URL:", error));
@@ -450,8 +457,14 @@
         }
 
         async function sendCurrentLocation() {
+            console.log("sendCurrentLocation called");  // Debug log
             if (!navigator.geolocation) {
                 alert("Geolocation is not supported by this browser.");
+                return;
+            }
+
+            if (!socket || !socket.connected) {
+                alert("WebSocket connection is not established.");
                 return;
             }
 
@@ -460,6 +473,7 @@
                     lat: position.coords.latitude,
                     lng: position.coords.longitude
                 };
+                console.log("Sending location:", location);  // Debug log
                 socket.emit("send_location", { location });
                 alert("Current location sent via WebSocket!");
             });
@@ -538,4 +552,4 @@
         fetchPoints();
     </script>
 </body>
-</html>
+</html> 
