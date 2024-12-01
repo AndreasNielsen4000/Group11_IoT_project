@@ -1,17 +1,24 @@
-# Project of IoT: Task Management Checker
+# Group 11 IoT Project: Checker, Wireless tracking system
+This is the github page for Group 11s project for DTU course 34365 IoT prototyping.
+## Group Members
+- Andreas Nielsen: s203833
+- Alexander Nordentoft: s176361
+- Asger Bardrum: s204188
+- Niklas Gundersen: s204191
+- Oliver Jeppesen: s204180
+- Gustav Thomsen: s194057
 
+## Project Description 
 
-# TrackLogix  
-
-TrackLogix is a privacy-focused solution for time and geolocation tracking, designed for professionals to log jobsite arrivals and departures with ease.  
+The project is a wireless tracking system. The system uses the GNSS for location tracking and LoRaWAN for communication with backend and frontend. The whole system it fitted into a one box with a button on the outside. The button is used to activate the system and log the location. The system is powered by a battery. The system is designed to be used in a car, where the user can press the button when arriving at a location and when leaving. The system will then log the time and location of the user. The data is then sent to backend/frontend where it is stored. The user can then access the data through a frontend. The frontend is a web app that shows the data on a map and in a list. 
 
 ## Features  
 - **Privacy by Design:** Tracking is only activated when the user presses a button.  
 - **Jobsite Tracking:** Logs arrival and departure times with timestamps and geolocation.  
 - **Web Interface:** View and manage logged data through a web app with map and list views.  
-- **Power Efficiency:** Operates in sleep mode and wakes only on button press to conserve energy.  
-- **Automatic LED Adjustment:** Uses a photoresistor to adjust LED brightness based on ambient light.  
-- **Web-App Integration:** Allows logging and data access via a phone app, even away from the vehicle.  
+- **Power Efficiency:** Parts of the sytem operates in sleep mode and wakes only on button press to conserve energy.  
+- **Automatic OLED Adjustment:** Uses a photoresistor to adjust OLED brightness based on ambient light.  
+- **Web-App Integration:** Allows logging and data access via a web app, even away from the vehicle.  
 
 ## Use Case  
 The device is ideal for craftsmen and other professionals who need to:  
@@ -20,52 +27,46 @@ The device is ideal for craftsmen and other professionals who need to:
 3. Access the logged data later for reporting or analysis.  
 
 ## System Components  
-1. **Hardware**:  
-   - Pro-Mini (with optional Arduino Uno or ESP8266)  
-   - GNSS module for location tracking  
-   - LoRaWAN for data transmission  
-   - Photoresistor for LED brightness adjustment  
-   - Push-button for manual activation  
+### Hardware:  
+   - Arduino Pro-Mini
+   - GNSS module (NEO-7N GNSS)
+   - LoRaWAN module (RN2483)  
+   - Photoresistor for OLED brightness control
+   - OLED display for status and data visualization
+   - LED for error/success indication
+   - Push-button
+   - breadboard power supply module (MB102)
+   - Battery for power supply  
 
-2. **Backend**:  
-   - Azure for secure logging and data storage  
+### **Backend and Frontend**:  
 
-3. **Frontend**:  
-   - Web app to display data as a sortable list or map  
+#### **Python and HTML**
+The backend is developed using Python and handles data processing, storage, and communication with the frontend. The frontend is built using HTML, CSS, and JavaScript, providing a user-friendly interface for viewing and managing the logged data.
+
+- **Python App**: 
+
+The Python application processes incoming data over MQTT fron TTN, stores it in a SQL database, and provides API endpoints for the frontend to access the data.
+
+- **HTML Page**: 
+
+The HTML page serves as the frontend interface, allowing users to view the logged data on a map and in a list format. It includes features for filtering and exporting data.
+It live updates the data from the backend and displays it on a map (5 second polling).
+
+#### **Azure IoT Central**
+
+Additionally to the python backend, we have implemented an Azure IoT Central solution. The IoT Central is hooked up with the TTN backend and the data is sent to the IoT Central. The IoT Central is therefore also used to display the data and monitor the device.
 
 ## Power Management  
-- The system remains in low-power sleep mode until the button is pressed.  
-- Transmits data and returns to sleep immediately to optimize battery life.  
+- GNSS and LoRaWAN modules are set to sleep mode when not in use.
+- The modules wake up when the button is pressed to log the location.
+- The LoRaWAN module checks for downlink messages every 10 minutes and goes back to sleep.
 
-## Setup Instructions  
-1. **Hardware Assembly**:  
-   - Connect the Pro-Mini to the GNSS module and LoRaWAN transmitter.  
-   - Attach the photoresistor and LED for brightness control.  
-   - Install the push-button for activation.  
+## Library modifications
+We modified the library for the LoRaWAN module (*https://github.com/jpmeijers/RN2483-Arduino-Library*), which can be accessed in the `RN2483-Arduino_Modified_ANAN` folder. The modifications was to lower the amount of time trying to connect and send messages to the TTN backend. This was done to both save power and to make the system more responsive when no connection is available. 
 
-2. **Software Installation**:  
-   - Upload the Arduino code to the Pro-Mini.  
-   - Configure LoRaWAN and Azure settings in the code.  
+## Test scripts
+For testing the system without the need of GNSS connection, we have created a test script that simulates the GNSS module. The script can be found in the `NMEA_Sim_Test_ESP32` folder. The script can be uploaded to an ESP32 and will simulate the GNSS module by sending NMEA strings over serial.
 
-3. **Frontend Deployment**:  
-   - Deploy the web app on your preferred server or use Azure hosting.  
-   - Configure API endpoints to connect with the backend.  
+## Circuit Diagram
 
-## Usage  
-1. Install the device in your vehicle.  
-2. Press the button to log timestamps and locations.  
-3. View logged data on the web app for tracking and reporting.  
-
-## Future Enhancements  
-- Integration with additional sensors for expanded functionality.  
-- Enhanced data visualization tools.  
-- Mobile app for better accessibility.  
-
-## License  
-This project is licensed under the MIT License. See `LICENSE` for details.  
-
-## Contributing  
-Contributions are welcome! Feel free to fork this repository and submit a pull request.  
-
-## Contact  
-For any questions or feedback, please contact us at support@tracklogix.com.  
+## Video Preview of Functionality
