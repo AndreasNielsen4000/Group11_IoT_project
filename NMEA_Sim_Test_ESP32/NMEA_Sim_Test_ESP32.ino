@@ -45,7 +45,5 @@ void loop()
     Serial.println("Starting");
     for(byte i = 0; i < 20; i++) gpsSerial.println(gps[i]);
     Serial.println("Done");
-    delay(885); // there are 436 characters to print, @ 38400 it will take about
-                // 115ms so delay for 885 to make the loop one second.
-    
+    delay(885);
 }

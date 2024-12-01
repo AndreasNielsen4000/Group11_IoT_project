@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, render_template, send_from_directory, redirect
+from flask import Flask, jsonify, request, send_from_directory, redirect
 from flask_socketio import SocketIO
 from datetime import datetime
 import json
@@ -14,6 +14,29 @@ import socket
 from queue import Queue
 import time
 
+'''
+The app.py and index.html files are inspired by previous projects not related to DTU.
+They are based on projects created at our workplace (Alexander and Andreas), and the code has been modified to fit the requirements of this project.
+
+Github Copilot has been used to assist with the code in these files.
+
+The functionallity of the app.py file is to create a webserver that can receive data from TTN via MQTT and store the data in a SQLite database.
+The data is then displayed on a map in the index.html file.
+
+The index.html file is a simple webpage that displays a map with markers for each data point received from TTN.
+It is also possible to filter, export and delete data points from the map and database.
+On the webpage, it is also possible to send a location to TTN via MQTT.
+
+To run the app, the following non-standard packages are required:
+- Flask
+- Flask-SocketIO
+- paho-mqtt
+- pyngrok
+- requests
+
+In addition, a registered Ngrok account is required to run the app in production mode.
+Ngrok is used to create a secure tunnel to the local server, this provides HTTPS and a public URL for the webserver.
+'''
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 socketio = SocketIO(app, cors_allowed_origins="*")
@@ -63,14 +86,11 @@ logger = logging.getLogger(__name__)
 
 
 # TTN V3 MQTT Configuration
-APP_ID = "an-an-dtu-34365@ttn"  # Replace with your TTN Application ID
-MQTT_APP_ID = "an-an-dtu-34365"  # Replace with your TTN Application ID
-ACCESS_KEY = "NNSXS.XKAUT5YGQ6CMQ7XJPX5VSJIOJGZ2WCCRCLO6ECA.FLUZPEZ7SNN6T4QCB32WVLXRNA6HTGQDRX4FFH7PRJESOOUR3CAQ"  # Replace with your TTN Access Key
+APP_ID = "an-an-dtu-34365@ttn"  # TTN Application ID
+ACCESS_KEY = "NNSXS.XKAUT5YGQ6CMQ7XJPX5VSJIOJGZ2WCCRCLO6ECA.FLUZPEZ7SNN6T4QCB32WVLXRNA6HTGQDRX4FFH7PRJESOOUR3CAQ"  # TTN Access Key
 BROKER = "eu1.cloud.thethings.network"  # Replace with your TTN cluster region (e.g., eu1, nam1)
 PORT = 8883  # MQTT over TLS
-# TOPIC = f"v3/{APP_ID}/devices/+/up"  # Subscribe to all devices for this app
 DEVICE_TOPIC = f"v3/{APP_ID}/devices/+/+"
-# USER_LOCATION_TOPIC = f"v3/{APP_ID}/devices/user-location/up"
 USER_LOCATION_TOPIC = f"v3/{APP_ID}/devices/dummy-device/down/push"
 
 
@@ -117,29 +137,6 @@ def get_all_points():
 
     points = [{'id': row[0], 'time': row[1], 'latitude': row[2], 'longitude': row[3], 'address': row[4]} for row in rows]
     return jsonify(points)
-
-# @socketio.on("send_location")
-# def handle_send_location(data):
-#     data["time"] = datetime.utcnow().isoformat()  # Add server time
-#     data["port"] = 1
-#     publish_data = {
-#         "downlinks": [
-#             {
-#                 "f_port": data["port"],
-#                 "frm_payload": "vu8=",
-#                 "priority": "NORMAL"
-#             }
-#         ]
-#     }
-#     publish.single(USER_LOCATION_TOPIC, json.dumps(publish_data), BROKER, port=1883, auth={'username': MQTT_APP_ID, 'password': ACCESS_KEY})
-#     ispublish = mqtt_client.publish(USER_LOCATION_TOPIC, json.dumps(publish_data))  # Publish to TTN via MQTT
-#     ispublish.wait_for_publish()
-#     if ispublish.rc == mqtt.MQTT_ERR_SUCCESS:
-#         logger.info("MQTT message published successfully")
-#     else:
-#         logger.error(f"Failed to publish MQTT message, return code {ispublish.rc}")
-#     # publish.single(USER_LOCATION_TOPIC, '{"downlinks":[{"f_port": 1,"frm_payload":"vu8=","priority": "NORMAL"}]}', BROKER, port=8883, auth={'username':MQTT_APP_ID,'password':ACCESS_KEY})
-#     logger.info(f"Sent location to MQTT: {data}")
 
 @socketio.on("send_location")
 def handle_send_location(data):
@@ -390,10 +387,6 @@ mqtt_client.on_message = on_message
 if __name__ == '__main__':
     # Call init_db to initialize the database on startup
     init_db()
-
-    # Start the MQTT client in a separate thread
-    # mqtt_thread = threading.Thread(target=start_mqtt)
-    # mqtt_thread.start()
     
     # Start the address worker thread to process the address queue
     address_worker_thread = threading.Thread(target=address_worker, daemon=True)
