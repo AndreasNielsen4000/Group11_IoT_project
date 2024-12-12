@@ -1,7 +1,9 @@
 #include <U8x8lib.h>
 #include <rn2xx3_modified.h>
 #include <SoftwareSerial.h>
+#ifndef DISABLE_GPS
 #include <TinyGPS++.h>
+#endif
 
 //128x64 display
 #define SCREEN_WIDTH 128
@@ -14,9 +16,9 @@ U8X8_SH1106_128X64_NONAME_HW_I2C u8x8(/* reset=*/ U8X8_PIN_NONE, /* clock=*/ SCL
 #define BTN_PIN 7
 #define LEDPIN 13
 #define BUZZERPIN 8
-#define LORA_RX 10
-#define LORA_TX 11
-#define LORA_RESET 9
+#define LORA_RX 0
+#define LORA_TX 1
+#define LORA_RESET 12
 #define BUZZER_OFF 0
 #define BUZZER_SUCCESS 2
 #define BUZZER_ERROR 3
@@ -24,7 +26,8 @@ U8X8_SH1106_128X64_NONAME_HW_I2C u8x8(/* reset=*/ U8X8_PIN_NONE, /* clock=*/ SCL
 #define GPS_RX 4
 #define GPS_TX 3
 
-#define DEBUG 
+// #define DEBUG 
+// #define DISABLE_GPS 
 
 bool displayDataFlag = false;
 bool displayErrorFlag = false;
@@ -38,11 +41,13 @@ struct loraPayload_t {
     char time[6]; // HHMMSS
 };
 
-SoftwareSerial loraSerial(LORA_RX, LORA_TX); // RX, TX
-rn2xx3 myLora(loraSerial);
+// SoftwareSerial loraSerial(LORA_RX, LORA_TX); // RX, TX
+rn2xx3 myLora(Serial);
 
+#ifndef DISABLE_GPS
 TinyGPSPlus gps;
 SoftwareSerial gpsSerial(GPS_RX, GPS_TX); // RX, TX for GPS module
+#endif
 
 loraPayload_t txData;
 
@@ -90,6 +95,7 @@ byte GPSoff[] = {0xB5, 0x62, 0x06, 0x11, 0x02, 0x00, 0x08, 0x01, 0x22, 0x92};
 // Byte array for wake command for GPS module
 byte GPSon[] = {0xFF, 0xFF, 0x00, 0x00};
 
+#ifndef DISABLE_GPS
 // Function to send a byte array of UBX protocol to the GPS
 // This function sends a UBX command to the GPS module to configure its settings.
 void sendUBX(uint8_t *MSG, uint8_t len) {
@@ -97,6 +103,7 @@ void sendUBX(uint8_t *MSG, uint8_t len) {
     gpsSerial.write(MSG[i]);
   }
 }
+#endif
 
 // Function to initialize the OLED display
 // This function sets up the OLED display with initial settings and displays a boot message.
@@ -268,10 +275,10 @@ float getBatteryVoltage() {
   return voltage;
 }
 
+#ifndef DISABLE_GPS
 // Function to get GPS data and update the txData structure
 // This function retrieves GPS data, formats it, and updates the txData structure with the location, date, and time.
 void getGPSData() {
-  
   gpsSerial.listen(); // Make GPS serial active
   sendUBX(GPSon, sizeof(GPSon)/sizeof(uint8_t));
   delay(500);
@@ -345,8 +352,8 @@ void getGPSData() {
   sendUBX(CFG_PM2, sizeof(CFG_PM2)/sizeof(uint8_t));
   delay(500);
   sendUBX(GPSoff, sizeof(GPSoff)/sizeof(uint8_t));
-  loraSerial.listen(); // Switch back to LoRa serial
 }
+#endif
 
 // Function to debounce the button press
 // This function debounces the button press to avoid multiple triggers and initiates GPS data retrieval on a valid press.
@@ -363,6 +370,7 @@ void debounceButton() {
                 #ifdef DEBUG
                 Serial.println("Button Pressed");
                 #endif
+                #ifndef DISABLE_GPS
                 getGPSData();
                 #ifdef DEBUG
                 Serial.print("Longitude: ");
@@ -373,6 +381,7 @@ void debounceButton() {
                 Serial.println(txData.date);
                 Serial.print("Time: ");
                 Serial.println(txData.time);
+                #endif
                 #endif
                 notHold = false;
                 flag = true;
@@ -391,12 +400,11 @@ void wakeUpLora() {
   #ifdef DEBUG
   Serial.println("Wake up LoRa");
   #endif
-  loraSerial.listen(); // Ensure LoRa serial is active
   digitalWrite(LORA_TX, LOW);
   pinMode(LORA_TX, OUTPUT);
   digitalWrite(LORA_TX, HIGH); 
   delay(20);
-  loraSerial.write(0x55);
+  Serial.write(0x55);
   myLora.autobaud();
   #ifdef DEBUG
   Serial.println("LoRa woke up");
@@ -415,7 +423,7 @@ void sendData() {
     Serial.println("Transmitting");
     #endif
     displayStatusMessage("Transmitting");
-    // wakeUpLora();
+    //wakeUpLora();
     uint8_t txResponse = myLora.txBytes((uint8_t*)&txData, sizeof(txData));
     if (txResponse == 0) {
         #ifdef DEBUG
@@ -432,7 +440,7 @@ void sendData() {
         buzzerStates = BUZZER_SUCCESS;
     }
     displayLoRaStatus(loraStatus);
-    // myLora.sleep(60000*10); // Sleep for 10 minutes
+    //myLora.sleep(60000); // Sleep for 10 minutes
     previousMillisTransmittedMessage = millis();
 }
 
@@ -440,7 +448,6 @@ void sendData() {
 // This function checks the LoRa connection by sending a test message and updates the status based on the response.
 void checkLoraConnection() {
   // From https://github.com/jpmeijers/RN2483-Arduino-Library/blob/master/examples/ArduinoUnoNano-downlink/ArduinoUnoNano-downlink.ino
-  loraSerial.listen(); // Ensure LoRa serial is active
   displayStatusMessage("Checking LoRa");
   previousMillisTransmittedMessage = millis();
   switch(myLora.txCnf("!")) //one byte, blocking function
@@ -463,12 +470,12 @@ void checkLoraConnection() {
         }
         case TX_WITH_RX:
         {
-            String received = myLora.getRx();
-            received = myLora.base16decode(received);
+            myLora.getRx();
             loraStatus = true;
             #ifdef DEBUG
             Serial.println("Received downlink: " + received);
             #endif
+            displayClearMessage();
             displayStatusMessage("App update");
             buzzerStates = BUZZER_UPDATE;
             previousMillisTransmittedMessage = millis();
@@ -488,15 +495,14 @@ void checkLoraConnection() {
 // This function initializes the LoRa module, attempts to join the network, and updates the connection status.
 void initializeRadio() {
   displayStatusMessage("LoRa Starting");
-  loraSerial.listen(); // Ensure LoRa serial is active
   //reset rn2483
   pinMode(LORA_RESET, OUTPUT);
   digitalWrite(LORA_RESET, LOW);
-  delay(10000);
+  delay(500);
   digitalWrite(LORA_RESET, HIGH);
 
   delay(100); //wait for the RN2xx3's startup message
-  loraSerial.flush();
+  Serial.flush();
 
   //Autobaud the rn2483 module to 9600. The default would otherwise be 57600.
   myLora.autobaud();
@@ -507,6 +513,7 @@ void initializeRadio() {
     Serial.println(F("Power Cycle LoRa"));
     Serial.println(hweui);
     #endif
+    displayStatusMessage("PWR LoRa");
     delay(10000);
   }
 
@@ -516,26 +523,20 @@ void initializeRadio() {
   #endif
   bool join_result = false;
 
-  // const char *appEui = "0000000000000000";
-  // const char *appKey = "511744DB68B8E1D4BCF88EA2E8F10887";
+  const char *appEui = "0000000000000000";
+  const char *appKey = "<private key>";
 
-  // join_result = myLora.initOTAA(appEui, appKey);
-
-  const char *devAddr = "260BE74E";
-  const char *nwkSKey = "74069E50C94868E50E0CE00DEC853D34";
-  const char *appSKey = "9B4493F883D82D685F536B636451770F";
-
-  join_result = myLora.initABP(devAddr, appSKey, nwkSKey);
+  join_result = myLora.initOTAA(appEui, appKey);
 
   unsigned long startAttemptTime = millis();
-  while(!join_result && millis() - startAttemptTime < 185000) // Try for 3 minutes
+  while(!join_result && millis() - startAttemptTime < 20000) // Try for 3 minutes
   {
     #ifdef DEBUG
     Serial.println(F("Unable to join TTN"));
     #endif
     // myLora.setDR(0); //setting data-rate
     join_result = myLora.init();
-    delay(20000); //delay 5 seconds before retry
+    delay(5000); //delay 5 seconds before retry
   }
 
   if (join_result) {
@@ -557,19 +558,19 @@ void initializeRadio() {
 // This function controls the buzzer to emit a success sound pattern.
 void buzzerSuccess() {
   digitalWrite(LEDPIN, HIGH);
-  tone(BUZZERPIN, 1000);
+  tone(BUZZERPIN, 1000, 200);
   delay(200);
   digitalWrite(LEDPIN, LOW);
-  tone(BUZZERPIN, 1100);
+  tone(BUZZERPIN, 1100, 200);
   delay(200);
   digitalWrite(LEDPIN, HIGH);
-  tone(BUZZERPIN, 1200);
+  tone(BUZZERPIN, 1200, 200);
   delay(200);
   digitalWrite(LEDPIN, LOW);
-  tone(BUZZERPIN, 1300);
+  tone(BUZZERPIN, 1300, 200);
   delay(200);
   digitalWrite(LEDPIN, HIGH);
-  tone(BUZZERPIN, 1400);
+  tone(BUZZERPIN, 1400, 200);
   delay(200);
   noTone(BUZZERPIN);
   buzzerStates = BUZZER_OFF;
@@ -580,13 +581,13 @@ void buzzerSuccess() {
 // This function controls the buzzer to emit an error sound pattern.
 void buzzerError() {
   digitalWrite(LEDPIN, HIGH);
-  tone(BUZZERPIN, 930);
+  tone(BUZZERPIN, 930, 500);
   digitalWrite(LEDPIN, LOW);
   delay(500);
-  tone(BUZZERPIN, 880);
+  tone(BUZZERPIN, 880, 500);
   digitalWrite(LEDPIN, HIGH);
   delay(500);
-  tone(BUZZERPIN, 830);
+  tone(BUZZERPIN, 830, 800);
   delay(800);
   noTone(BUZZERPIN);
   buzzerStates = BUZZER_OFF;
@@ -597,13 +598,13 @@ void buzzerError() {
 // This function controls the buzzer to emit an update sound pattern.
 void buzzerUpdate() {
   digitalWrite(LEDPIN, HIGH);
-  tone(BUZZERPIN, 1500); 
+  tone(BUZZERPIN, 1500, 300); 
   delay(300);
   digitalWrite(LEDPIN, LOW);
-  tone(BUZZERPIN, 1600);
+  tone(BUZZERPIN, 1600, 300);
   delay(300);
   digitalWrite(LEDPIN, HIGH);
-  tone(BUZZERPIN, 1700);
+  tone(BUZZERPIN, 1700, 300);
   delay(300);
   noTone(BUZZERPIN);
   buzzerStates = BUZZER_OFF;
@@ -629,13 +630,10 @@ void buzzerControl() {
 // Setup function to initialize the hardware and software components
 // This function sets up the initial state of the hardware and software components, including the OLED display, LoRa, and GPS modules.
 void setup() {
-  #ifdef DEBUG
-  Serial.begin(9600);
-  #endif
   pinMode(BUZZERPIN, OUTPUT);
   tone(BUZZERPIN, 600, 300); // Buzzer startup sound
   displaySetup();
-  loraSerial.begin(9600); 
+  #ifndef DISABLE_GPS
   gpsSerial.begin(9600);
   gpsSerial.listen(); // Ensure GPS serial is active
   // Turn GPS Power save mode on
@@ -645,10 +643,12 @@ void setup() {
   delay(500);
   sendUBX(GPSoff, sizeof(GPSoff)/sizeof(uint8_t));
   delay(500);
-  
-  loraSerial.listen(); // Ensure LoRa serial is active
+  #endif
+  delay(15000); // Wait for GPS to start)
+
+  Serial.begin(19200);
   initializeRadio();
-  // myLora.sleep(60000*10);
+  //myLora.sleep(60000);
   pinMode(LDR, INPUT);
   pinMode(BATTERYPIN, INPUT);
   pinMode(BTN_PIN, INPUT);
@@ -668,12 +668,12 @@ void loop() {
     delay(100);
     static unsigned long lastLoraUpdate = 0;
     unsigned long currentMillis = millis();
-    if (currentMillis - lastLoraUpdate >= 60000) { // Check RX message every ~10 minute
-      // wakeUpLora();
+    if (currentMillis - lastLoraUpdate >= 600000) { // Check RX message every ~10 minute
+      //wakeUpLora();
       lastLoraUpdate = currentMillis;
       checkLoraConnection();
       displayLoRaStatus(loraStatus);
-      // myLora.sleep(60000*10);
+      //myLora.sleep(60000);
     }
     buzzerControl();
 }

@@ -41,7 +41,7 @@ Ngrok is used to create a secure tunnel to the local server, this provides HTTPS
 app = Flask(__name__, static_folder="static", template_folder="templates")
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-DEBUG_MODE = True  # Set to True to disable ngrok for debugging
+DEBUG_MODE = False  # Set to True to disable ngrok for debugging
 
 # Attempt to start ngrok and set the WebSocket URL
 def get_local_ip():
@@ -87,11 +87,11 @@ logger = logging.getLogger(__name__)
 
 # TTN V3 MQTT Configuration
 APP_ID = "an-an-dtu-34365@ttn"  # TTN Application ID
-ACCESS_KEY = "NNSXS.XKAUT5YGQ6CMQ7XJPX5VSJIOJGZ2WCCRCLO6ECA.FLUZPEZ7SNN6T4QCB32WVLXRNA6HTGQDRX4FFH7PRJESOOUR3CAQ"  # TTN Access Key
+ACCESS_KEY = "<private key>"  # TTN Access Key
 BROKER = "eu1.cloud.thethings.network"  # Replace with your TTN cluster region (e.g., eu1, nam1)
 PORT = 8883  # MQTT over TLS
 DEVICE_TOPIC = f"v3/{APP_ID}/devices/+/+"
-USER_LOCATION_TOPIC = f"v3/{APP_ID}/devices/dummy-device/down/push"
+USER_LOCATION_TOPIC = f"v3/{APP_ID}/devices/temp-sensor-1-test/down/push"
 
 
 # Initialize MQTT client
@@ -165,7 +165,8 @@ def handle_send_location(data):
         hostname=BROKER,
         port=8883,  # Secure MQTT port
         auth={'username': APP_ID, 'password': ACCESS_KEY},
-        tls={'ca_certs': None}  # Enable TLS
+        tls={'ca_certs': None},  # Enable TLS
+        retain=True
     )
 
 
