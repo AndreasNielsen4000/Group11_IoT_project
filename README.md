@@ -72,3 +72,6 @@ For testing the system without the need of GNSS connection, we have created a te
 
 
 ## Video Preview of Functionality
+https://github.com/user-attachments/assets/457eb75c-113f-40f2-8d50-95d4f17827c1
+
+
