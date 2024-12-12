@@ -68,5 +68,7 @@ We modified the library for the LoRaWAN module (*https://github.com/jpmeijers/RN
 For testing the system without the need of GNSS connection, we have created a test script that simulates the GNSS module. The script can be found in the `NMEA_Sim_Test_ESP32` folder. The script can be uploaded to an ESP32 and will simulate the GNSS module by sending NMEA strings over serial.
 
 ## Circuit Diagram
+![Circuit Diagram](circuit_diagram.png)
+
 
 ## Video Preview of Functionality
